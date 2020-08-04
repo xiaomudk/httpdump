@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
-	"encoding/json"
+	// "encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/hsiafan/glow/iox/filex"
-	"github.com/hsiafan/httpdump/httpport"
+	"github.com/faithnh/httpdump/httpport"
 
 	"bufio"
 
@@ -471,14 +471,14 @@ func (h *HTTPTrafficHandler) printBody(header httpport.Header, reader io.ReadClo
 	}
 
 	// prettify json
-	if mimeType.subType == "json" || likeJSON(body) {
-		var jsonValue interface{}
-		_ = json.Unmarshal([]byte(body), &jsonValue)
-		prettyJSON, err := json.MarshalIndent(jsonValue, "", "    ")
-		if err == nil {
-			body = string(prettyJSON)
-		}
-	}
+	// if mimeType.subType == "json" || likeJSON(body) {
+	// 	var jsonValue interface{}
+	// 	_ = json.Unmarshal([]byte(body), &jsonValue)
+	// 	prettyJSON, err := json.MarshalIndent(jsonValue, "", "    ")
+	// 	if err == nil {
+	// 		body = string(prettyJSON)
+	// 	}
+	// }
 	h.writeLine(body)
 	h.writeLine()
 }
