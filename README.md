@@ -24,7 +24,7 @@ Libpcap and header files should be available in macOS already.
 ## Install
 
 ```sh
-go get github.com/hsiafan/httpdump
+go get github.com/faithnh/httpdump
 ```
 
 
