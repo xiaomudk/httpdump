@@ -1,4 +1,4 @@
-module github.com/hsiafan/httpdump
+module github.com/faithnh/httpdump
 
 require (
 	github.com/google/gopacket v1.1.16
