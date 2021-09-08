@@ -463,7 +463,7 @@ func (h *HTTPTrafficHandler) getBody(header httpport.Header, reader io.ReadClose
 	if !isText {
 		err := h.printNonTextTypeBody(nr, contentType, isBinary)
 		if err != nil {
-			h.writeLine("{Read content error", err, "}")
+			h.writeLine("Read content error", err)
 		}
 		return []byte("")
 	}
@@ -482,7 +482,7 @@ func (h *HTTPTrafficHandler) getBody(header httpport.Header, reader io.ReadClose
 		body, err = readToBytesWithCharset(nr, charset)
 	}
 	if err != nil {
-		h.writeLine("{Read body failed", err, "}")
+		h.writeLine("Read body failed", err)
 		return []byte("")
 	}
 
