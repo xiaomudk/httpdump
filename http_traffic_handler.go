@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
-	// "encoding/json"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hsiafan/glow/iox/filex"
 	"github.com/faithnh/httpdump/httpport"
+	"github.com/hsiafan/glow/iox/filex"
 
 	"bufio"
 
@@ -133,11 +133,17 @@ func (h *HTTPTrafficHandler) handle(connection *TCPConnection) {
 		}
 
 		if !filtered {
-			h.printRequest(req)
-			h.writeLine("")
-			h.endTime = connection.lastTimestamp
-			h.printResponse(req.RequestURI, resp)
-			h.printer.send(h.buffer.String())
+			if h.option.OutputFormat == "json" {
+				h.endTime = connection.lastTimestamp
+				h.printRequestAndResponse(req, resp)
+				h.printer.send(h.buffer.String())
+			} else {
+				h.printRequest(req)
+				h.writeLine("")
+				h.endTime = connection.lastTimestamp
+				h.printResponse(req.RequestURI, resp)
+				h.printer.send(h.buffer.String())
+			}
 		} else {
 			discardAll(req.Body)
 			discardAll(resp.Body)
@@ -216,7 +222,7 @@ func (h *HTTPTrafficHandler) printHeader(header httpport.Header) {
 // print http request
 func (h *HTTPTrafficHandler) printRequest(req *httpport.Request) {
 	defer discardAll(req.Body)
-	if h.option.Curl {
+	if h.option.OutputFormat == "curl" {
 		h.printCurlRequest(req)
 	} else {
 		h.printNormalRequest(req)
@@ -399,6 +405,57 @@ func (h *HTTPTrafficHandler) printResponse(uri string, resp *httpport.Response) 
 	if hasBody {
 		h.printBody(resp.Header, resp.Body)
 	}
+}
+
+type RequestAndResponse struct {
+	Src            string          `json:"src,omitempty"`
+	Dst            string          `json:"dst,omitempty"`
+	StatusCode     int             `json:"status_code,omitempty"`
+	ReqHeaders     httpport.Header `json:"req_header,omitempty"`
+	ResHeaders     httpport.Header `json:"res_header,omitempty"`
+	ReqStartTime   string          `json:"req_start_time,omitempty"`
+	ReqEndTime     string          `json:"req_end_time,omitempty"`
+	TurnAroundTime string          `json:"turn_around_time,omitempty"`
+	ReqBody        json.RawMessage `json:"req_body,omitempty"`
+	ResBody        json.RawMessage `json:"res_body,omitempty"`
+}
+
+func (h *HTTPTrafficHandler) printRequestAndResponse(req *httpport.Request, resp *httpport.Response) {
+	result := RequestAndResponse{
+		Src:            h.key.srcString(),
+		Dst:            h.key.dstString(),
+		StatusCode:     resp.StatusCode,
+		ReqHeaders:     req.Header,
+		ResHeaders:     resp.Header,
+		ReqStartTime:   h.startTime.Format(time.RFC3339Nano),
+		ReqEndTime:     h.endTime.Format(time.RFC3339Nano),
+		TurnAroundTime: h.endTime.Sub(h.startTime).String(),
+	}
+
+	{
+		data, err := ioutil.ReadAll(req.Body)
+		if err == nil {
+			result.ReqBody = data
+		} else {
+			h.writeLine(err)
+		}
+	}
+
+	{
+		data, err := ioutil.ReadAll(resp.Body)
+		if err == nil {
+			result.ResBody = data
+		} else {
+			h.writeLine(err)
+		}
+	}
+
+	e, err := json.Marshal(result)
+	if err != nil {
+		return
+	}
+
+	h.writeLine(string(e))
 }
 
 func (h *HTTPTrafficHandler) tryDecompress(header httpport.Header, reader io.ReadCloser) (io.ReadCloser, bool) {

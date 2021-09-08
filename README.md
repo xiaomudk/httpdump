@@ -27,14 +27,21 @@ Libpcap and header files should be available in macOS already.
 go get github.com/faithnh/httpdump
 ```
 
+## Development
+
+### Build
+
+``` sh
+go build -o httpdump *.go
+```
 
 # Usage
 httpdump can read from pcap file, or capture data from network interfaces. Usage:
 
 ```
-Usage: httpdump 
-  -curl
-    	Output an equivalent curl command for each http request
+Usage: httpdump
+  -output-format
+      Output format: curl: an equivalent curl command for each http request, json: json format, default: Normal format
   -device string
     	Capture packet from network device. If is any, capture all interface traffics (default "any")
   -dump-body
