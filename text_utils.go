@@ -157,6 +157,29 @@ func readToStringWithCharset(reader io.Reader, charset string) (string, error) {
 	return string(data), err
 }
 
+func readToBytesWithCharset(reader io.Reader, charset string) ([]byte, error) {
+	charset = strings.ToUpper(charset)
+	var data []byte
+	var err error
+	if charset == "UTF-8" || charset == "UTF8" {
+		data, err = ioutil.ReadAll(reader)
+	} else {
+		if charset == "GBK" || charset == "GB2312" {
+			charset = "GB18030"
+		}
+		var encoder encoding.Encoding
+		encoder, err = htmlindex.Get(charset)
+		if err != nil {
+			return []byte(""), err
+		}
+		data, err = ioutil.ReadAll(transform.NewReader(reader, encoder.NewDecoder()))
+	}
+	if err != nil {
+		return []byte(""), err
+	}
+	return data, err
+}
+
 // convert byte array to string, using charset specified
 func byteToStringWithCharset(data []byte, charset string) (string, error) {
 	charset = strings.ToUpper(charset)

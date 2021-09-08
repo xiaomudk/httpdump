@@ -147,7 +147,6 @@ func (h *HTTPTrafficHandler) handle(connection *TCPConnection) {
 		} else {
 			discardAll(req.Body)
 			discardAll(resp.Body)
-
 		}
 
 		if websocket {
@@ -432,23 +431,8 @@ func (h *HTTPTrafficHandler) printRequestAndResponse(req *httpport.Request, resp
 		TurnAroundTime: h.endTime.Sub(h.startTime).String(),
 	}
 
-	{
-		data, err := ioutil.ReadAll(req.Body)
-		if err == nil {
-			result.ReqBody = data
-		} else {
-			h.writeLine(err)
-		}
-	}
-
-	{
-		data, err := ioutil.ReadAll(resp.Body)
-		if err == nil {
-			result.ResBody = data
-		} else {
-			h.writeLine(err)
-		}
-	}
+	result.ReqBody = h.getBody(req.Header, req.Body)
+	result.ResBody = h.getBody(resp.Header, resp.Body)
 
 	e, err := json.Marshal(result)
 	if err != nil {
@@ -456,6 +440,62 @@ func (h *HTTPTrafficHandler) printRequestAndResponse(req *httpport.Request, resp
 	}
 
 	h.writeLine(string(e))
+}
+
+func (h *HTTPTrafficHandler) getBody(header httpport.Header, reader io.ReadCloser) []byte {
+
+	// deal with content encoding such as gzip, deflate
+	nr, decompressed := h.tryDecompress(header, reader)
+	if decompressed {
+		defer nr.Close()
+	}
+
+	// check mime type and charset
+	contentType := header.Get("Content-Type")
+	if contentType == "" {
+		// TODO: detect content type using httpport.DetectContentType()
+	}
+	mimeTypeStr, charset := parseContentType(contentType)
+	var mimeType = parseMimeType(mimeTypeStr)
+	isText := mimeType.isTextContent()
+	isBinary := mimeType.isBinaryContent()
+
+	if !isText {
+		err := h.printNonTextTypeBody(nr, contentType, isBinary)
+		if err != nil {
+			h.writeLine("{Read content error", err, "}")
+		}
+		return []byte("")
+	}
+
+	var body []byte
+	var err error
+	if charset == "" {
+		// response do not set charset, try to detect
+		var data []byte
+		data, err := ioutil.ReadAll(nr)
+		if err == nil {
+			// TODO: try to detect charset
+			body = data
+		}
+	} else {
+		body, err = readToBytesWithCharset(nr, charset)
+	}
+	if err != nil {
+		h.writeLine("{Read body failed", err, "}")
+		return []byte("")
+	}
+
+	// prettify json
+	// if mimeType.subType == "json" || likeJSON(body) {
+	// 	var jsonValue interface{}
+	// 	_ = json.Unmarshal([]byte(body), &jsonValue)
+	// 	prettyJSON, err := json.MarshalIndent(jsonValue, "", "    ")
+	// 	if err == nil {
+	// 		body = string(prettyJSON)
+	// 	}
+	// }
+	return body
 }
 
 func (h *HTTPTrafficHandler) tryDecompress(header httpport.Header, reader io.ReadCloser) (io.ReadCloser, bool) {
