@@ -13,8 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/faithnh/httpdump/httpport"
-	"github.com/hsiafan/glow/iox/filex"
+	"github.com/hsiafan/httpdump/httpport"
 
 	"bufio"
 
@@ -128,25 +127,20 @@ func (h *HTTPTrafficHandler) handle(connection *TCPConnection) {
 			break
 		}
 
-		if h.option.StatusSet != nil && !h.option.StatusSet.Contains(resp.StatusCode) {
+		if h.option.statusSet != nil && !h.option.statusSet.Contains(resp.StatusCode) {
 			filtered = true
 		}
 
 		if !filtered {
-			if h.option.OutputFormat == "json" {
-				h.endTime = connection.lastTimestamp
-				h.printRequestAndResponse(req, resp)
-				h.printer.send(h.buffer.String())
-			} else {
-				h.printRequest(req)
-				h.writeLine("")
-				h.endTime = connection.lastTimestamp
-				h.printResponse(req.RequestURI, resp)
-				h.printer.send(h.buffer.String())
-			}
+			h.printRequest(req)
+			h.writeLine("")
+			h.endTime = connection.lastTimestamp
+			h.printResponse(req.RequestURI, resp)
+			h.printer.send(h.buffer.String())
 		} else {
 			discardAll(req.Body)
 			discardAll(resp.Body)
+
 		}
 
 		if websocket {
@@ -221,7 +215,7 @@ func (h *HTTPTrafficHandler) printHeader(header httpport.Header) {
 // print http request
 func (h *HTTPTrafficHandler) printRequest(req *httpport.Request) {
 	defer discardAll(req.Body)
-	if h.option.OutputFormat == "curl" {
+	if h.option.Curl {
 		h.printCurlRequest(req)
 	} else {
 		h.printNormalRequest(req)
@@ -284,7 +278,7 @@ func (h *HTTPTrafficHandler) printCurlRequest(req *httpport.Request) {
 		filename := "request-" + uriToFileName(req.RequestURI, h.startTime)
 		h.writeLineFormat("    -d '@%v'", filename)
 
-		err := filex.WriteAllFromReader(filename, reader)
+		err := writeToFile(reader, filename)
 		if err != nil {
 			h.writeLine("dump to file failed:", err)
 		}
@@ -340,20 +334,20 @@ func (h *HTTPTrafficHandler) printNormalRequest(req *httpport.Request) {
 		filename := "request-" + uriToFileName(req.RequestURI, h.startTime)
 		h.writeLine("\n// dump body to file:", filename)
 
-		err := filex.WriteAllFromReader(filename, req.Body)
+		err := writeToFile(req.Body, filename)
 		if err != nil {
 			h.writeLine("dump to file failed:", err)
 		}
 		return
 	}
 
-	if h.option.Level == "header" {
-		if hasBody {
-			h.writeLine("\n// body size:", discardAll(req.Body),
-				", set [level = all] to display http body")
-		}
-		return
-	}
+	// if h.option.Level == "header" {
+	// 	if hasBody {
+	// 		h.writeLine("\n// body size:", discardAll(req.Body),
+	// 			", set [level = all] to display http body")
+	// 	}
+	// 	return
+	// }
 
 	h.writeLine()
 
@@ -370,6 +364,7 @@ func (h *HTTPTrafficHandler) printResponse(uri string, resp *httpport.Response) 
 	}
 
 	h.writeLine(strings.Repeat("*", 10), " RESPONSE ", h.key.srcString(), " <----- ", h.key.dstString(), " // ", h.startTime.Format(time.RFC3339Nano), "-", h.endTime.Format(time.RFC3339Nano), "=", h.endTime.Sub(h.startTime).String())
+	h.writeLine("Response Time(RT):", h.endTime.Sub(h.startTime).Milliseconds(), "ms")
 
 	h.writeLine(resp.StatusLine)
 	for _, header := range resp.RawHeaders {
@@ -385,7 +380,7 @@ func (h *HTTPTrafficHandler) printResponse(uri string, resp *httpport.Response) 
 		filename := "response-" + uriToFileName(uri, h.startTime)
 		h.writeLine("\n// dump body to file:", filename)
 
-		err := filex.WriteAllFromReader(filename, resp.Body)
+		err := writeToFile(resp.Body, filename)
 		if err != nil {
 			h.writeLine("dump to file failed:", err)
 		}
@@ -404,98 +399,6 @@ func (h *HTTPTrafficHandler) printResponse(uri string, resp *httpport.Response) 
 	if hasBody {
 		h.printBody(resp.Header, resp.Body)
 	}
-}
-
-type RequestAndResponse struct {
-	Src            string          `json:"src,omitempty"`
-	Dst            string          `json:"dst,omitempty"`
-	StatusCode     int             `json:"status_code,omitempty"`
-	ReqHeaders     httpport.Header `json:"req_header,omitempty"`
-	ResHeaders     httpport.Header `json:"res_header,omitempty"`
-	ReqStartTime   string          `json:"req_start_time,omitempty"`
-	ReqEndTime     string          `json:"req_end_time,omitempty"`
-	TurnAroundTime string          `json:"turn_around_time,omitempty"`
-	ReqBody        json.RawMessage `json:"req_body,omitempty"`
-	ResBody        json.RawMessage `json:"res_body,omitempty"`
-}
-
-func (h *HTTPTrafficHandler) printRequestAndResponse(req *httpport.Request, resp *httpport.Response) {
-	result := RequestAndResponse{
-		Src:            h.key.srcString(),
-		Dst:            h.key.dstString(),
-		StatusCode:     resp.StatusCode,
-		ReqHeaders:     req.Header,
-		ResHeaders:     resp.Header,
-		ReqStartTime:   h.startTime.Format(time.RFC3339Nano),
-		ReqEndTime:     h.endTime.Format(time.RFC3339Nano),
-		TurnAroundTime: h.endTime.Sub(h.startTime).String(),
-	}
-
-	result.ReqBody = h.getBody(req.Header, req.Body)
-	result.ResBody = h.getBody(resp.Header, resp.Body)
-
-	e, err := json.Marshal(result)
-	if err != nil {
-		return
-	}
-
-	h.writeLine(string(e))
-}
-
-func (h *HTTPTrafficHandler) getBody(header httpport.Header, reader io.ReadCloser) []byte {
-
-	// deal with content encoding such as gzip, deflate
-	nr, decompressed := h.tryDecompress(header, reader)
-	if decompressed {
-		defer nr.Close()
-	}
-
-	// check mime type and charset
-	contentType := header.Get("Content-Type")
-	if contentType == "" {
-		// TODO: detect content type using httpport.DetectContentType()
-	}
-	mimeTypeStr, charset := parseContentType(contentType)
-	var mimeType = parseMimeType(mimeTypeStr)
-	isText := mimeType.isTextContent()
-	isBinary := mimeType.isBinaryContent()
-
-	if !isText {
-		err := h.printNonTextTypeBody(nr, contentType, isBinary)
-		if err != nil {
-			h.writeLine("Read content error", err)
-		}
-		return []byte("")
-	}
-
-	var body []byte
-	var err error
-	if charset == "" {
-		// response do not set charset, try to detect
-		var data []byte
-		data, err := ioutil.ReadAll(nr)
-		if err == nil {
-			// TODO: try to detect charset
-			body = data
-		}
-	} else {
-		body, err = readToBytesWithCharset(nr, charset)
-	}
-	if err != nil {
-		h.writeLine("Read body failed", err)
-		return []byte("")
-	}
-
-	// prettify json
-	// if mimeType.subType == "json" || likeJSON(body) {
-	// 	var jsonValue interface{}
-	// 	_ = json.Unmarshal([]byte(body), &jsonValue)
-	// 	prettyJSON, err := json.MarshalIndent(jsonValue, "", "    ")
-	// 	if err == nil {
-	// 		body = string(prettyJSON)
-	// 	}
-	// }
-	return body
 }
 
 func (h *HTTPTrafficHandler) tryDecompress(header httpport.Header, reader io.ReadCloser) (io.ReadCloser, bool) {
@@ -568,14 +471,14 @@ func (h *HTTPTrafficHandler) printBody(header httpport.Header, reader io.ReadClo
 	}
 
 	// prettify json
-	// if mimeType.subType == "json" || likeJSON(body) {
-	// 	var jsonValue interface{}
-	// 	_ = json.Unmarshal([]byte(body), &jsonValue)
-	// 	prettyJSON, err := json.MarshalIndent(jsonValue, "", "    ")
-	// 	if err == nil {
-	// 		body = string(prettyJSON)
-	// 	}
-	// }
+	if mimeType.subType == "json" || likeJSON(body) {
+		var jsonValue interface{}
+		_ = json.Unmarshal([]byte(body), &jsonValue)
+		prettyJSON, err := json.MarshalIndent(jsonValue, "", "    ")
+		if err == nil {
+			body = string(prettyJSON)
+		}
+	}
 	h.writeLine(body)
 	h.writeLine()
 }
