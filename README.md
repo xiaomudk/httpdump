@@ -26,7 +26,7 @@ Libpcap and header files should be available in macOS already.
 ## Install
 
 ```sh
-go get github.com/faithnh/httpdump
+go get github.com/xiaomudk/httpdump
 ```
 
 ## Development

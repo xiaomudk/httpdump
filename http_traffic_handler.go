@@ -364,7 +364,7 @@ func (h *HTTPTrafficHandler) printResponse(uri string, resp *httpport.Response) 
 	}
 
 	h.writeLine(strings.Repeat("*", 10), " RESPONSE ", h.key.srcString(), " <----- ", h.key.dstString(), " // ", h.startTime.Format(time.RFC3339Nano), "-", h.endTime.Format(time.RFC3339Nano), "=", h.endTime.Sub(h.startTime).String())
-	h.writeLine("Response Time(RT):", h.endTime.Sub(h.startTime).Milliseconds(), "ms")
+	h.writeLine("Response Time(RT): ", h.endTime.Sub(h.startTime).Milliseconds(), "ms")
 
 	h.writeLine(resp.StatusLine)
 	for _, header := range resp.RawHeaders {
